@@ -1,0 +1,8 @@
+# ignore data files
+data
+
+# ignore pycache
+__pycache__
+
+# ignore models-> regression models
+models/Regression_models

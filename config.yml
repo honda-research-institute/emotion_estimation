@@ -1,0 +1,75 @@
+# Signal parameters
+freq              : 200
+filter_band       : [0.8, 2]
+window_size       : 10
+transform_types   : [0, 1, 2, 3, 4, 5, 6] # signal transformations, 0 - raw signal
+n_transforms      : 7                     # total number of signal transformations along with the original signal
+
+oasis_path        : "data/OASIS-all.csv"
+
+# dataset_paths
+wesad:
+  sfreq           : 700
+  n_channels      : 2
+  ch_names        : ['ECG', 'Resp']
+  ch_types        : ['ecg', 'misc']
+  load_path       : "data/raw/WESAD"
+  interim         : "data/interim/wesad.h5"
+  # processed_ECG   : "data/processed/wesad_ECG.h"
+dreamer:
+  sfreq           : 256
+  n_channels      : 2
+  ch_names        : ['ECG1', 'ECG2']
+  ch_types        : ['ecg', 'ecg']
+  load_path       : "data/raw/DREAMER/DREAMER.mat"
+  interim         : "data/interim/dreamer.h5"
+  # processed_ECG   : "data/processed/dreamer_ECG.h5"
+
+hri:
+  event_window         : 15   # each picture is displayed for 15 secs
+  percent_overlap      : 0.5  # 0.5 seconds
+  ch_names             : ['ECG', 'EMG', 'GSR', 'PPG', 'RSP']
+  sfreq                : {'ecg': 200, 'emg': 250, 'gsr': 25, 'ppg': 200, 'rsp': 25}
+  file_names           : ['ecg.csv', 'emg.csv', 'gsr.csv', 'ppg.csv', 'rsp.csv'] # csv files for each scenario of subject data
+  load_path            : "data/raw/HRI"
+  interim_raw          : "data/interim/hri_raw.h5"
+  interim_standardized : "data/interim/hri_standardized.h5"
+  interim_first_samp   : "data/interim/hri_first_samp.h5" # standardized first 3 samples from each picture event
+  interim_last_samp    : "data/interim/hri_last_samp.h5"  # standardized last 3 samples from each picture event
+  processed            : "data/processed/hri.h5" # not used
+
+
+raw_data_pool         : "data/raw/raw_data_pool.h5"
+transformed_data      : "data/processed/transformed_data.h5"
+
+# Raw HRI data  
+hri_pooled    : "data/processed/hri_pooled.h5"
+
+# features extracted from SSL net, these are of dimension N x 128
+hri_ECG_SSL_feats              : "data/features/hri_ECG_SSL_feats.h5"
+hri_ECG_SSL_feats_pooled       : "data/features/hri_ECG_SSL_feats_pooled.h5"
+hri_ECG_SSL_feats_category1    : "data/features/hri_ECG_SSL_feats_category1.h5" 
+hri_ECG_SSL_feats_category2    : "data/features/hri_ECG_SSL_feats_category2.h5" 
+hri_ECG_SSL_feats_first_samp   : "data/features/hri_ECG_SSL_feats_first_samp.h5"
+hri_ECG_SSL_feats_last_samp    : "data/features/hri_ECG_SSL_feats_last_samp.h5"
+
+# Handpicked features from the modalities
+hri_feats            : "data/features/hri_feats.h5"
+hri_feats_pooled     : "data/features/hri_feats_pooled.h5"
+hri_feats_first_samp : "data/features/hri_feats_first_samp.h5"
+hri_feats_last_samp  : "data/features/hri_feats_last_samp.h5"
+
+# Sort the data according to increasing valence and pick different images for training and testing
+hri_feats_category1  : "data/features/hri_feats_category1.h5" 
+# Separate the data based on three image categories in v-shape arousal-valence plane
+hri_feats_category2  : "data/features/hri_feats_category2.h5" 
+
+
+# torch data
+torch:
+  SSL_runs                  : "runs/SSL_runs/"
+  SSL_models                : "models/SSL_models/"
+  EMOTION_runs              : "runs/EMOTION_runs/"
+  EMOTION_models            : "models/EMOTION_models/"
+  SSL_flat_feat             : 128
+  EMOTION_flat_feat         : 128
