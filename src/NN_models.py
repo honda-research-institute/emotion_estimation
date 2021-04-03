@@ -232,7 +232,7 @@ class SelfSupervisedNet(nn.Module):
                 scheduler.step()
            
             # save torch model
-            if epoch % 10 == 9:
+            if epoch % 100 == 99:
                 # (str(len(os.listdir(self.config['torch']['SSL_models']))) if os.path.exists(self.config['torch']['SSL_models']) else 0) +
                 model_path = model_save_path + '/net_' + str(epoch+1) + '.pth' 
                 torch.save({ 'epoch': epoch+1,
@@ -434,7 +434,7 @@ class SelfSupervisedNet2(nn.Module):
                 scheduler.step()
            
             # save torch model
-            if epoch % 10 == 9:
+            if epoch % 100 == 99:
                 # (str(len(os.listdir(self.config['torch']['SSL_models']))) if os.path.exists(self.config['torch']['SSL_models']) else 0) +
                 model_path = model_save_path + '/net_' + str(epoch+1) + '.pth' 
                 torch.save({ 'epoch': epoch+1,
@@ -601,7 +601,6 @@ class EcgNet(nn.Module):
 
         return ars_mse, ars_r2, val_mse, val_r2
 
-
     def three_dim_accuracy(self, output, labels):
         """Use Arousal-Valence dimensional model (2d plane) for calculating 
         the accuracy labels assigned in anticlockwise direction
@@ -700,7 +699,6 @@ class EcgNet(nn.Module):
                 ax[1].plot(valid_output.detach().to('cpu').numpy()[:, 1], valid_output.detach().to('cpu').numpy()[:, 0], 'r.')
                 ax[1].plot(valid_data['labels'].detach().to('cpu')[:, 1], valid_data['labels'].detach().to('cpu')[:, 0], 'b.')
             
-            plt.pause(.01)
 
             self.writer.add_scalar('Training Loss', running_loss/counter, epoch+1)
             self.writer.add_scalar('Arousal Training Accuracy', np.mean(arousal_train), epoch+1)
@@ -716,7 +714,7 @@ class EcgNet(nn.Module):
                     scheduler.step()
 
             # save torch model
-            if epoch % 10 == 9:
+            if epoch % 100 == 99:
                 
                 # (str(len(os.listdir(self.config['torch']['SSL_models']))) if os.path.exists(self.config['torch']['SSL_models']) else 0) +
                 model_path = model_save_path + '/net_' + str(epoch+1) + '.pth' 
@@ -726,7 +724,15 @@ class EcgNet(nn.Module):
                              'optimizer_state_dict': optimizer.state_dict(),
                              'loss': self.loss,
                             }, model_path)
-
+            
+            if epoch % 50 == 49:
+                ax[0].set_xlim([1, 6])
+                ax[0].set_ylim([1, 6])
+                ax[1].set_xlim([1, 6])
+                ax[1].set_ylim([1, 6])
+                plt.suptitle('EcgNet')
+                plt.pause(.01)
+                
         self.writer.close()
         print('Finished training')
 
@@ -756,8 +762,8 @@ class EcgNet(nn.Module):
             ax.plot(output.detach().to('cpu').numpy()[:, 1], output.detach().to('cpu').numpy()[:, 0], 'r.')
             ax.plot(data['labels'].detach().to('cpu')[:, 1], data['labels'].detach().to('cpu')[:, 0], 'b.')
         
-        ax.set_xlim([1.5, 6])
-        ax.set_ylim([1.5, 6])
+        ax.set_xlim([1, 6])
+        ax.set_ylim([1, 6])
         # ax.grid() 
         # plt.title('')
 
@@ -768,7 +774,23 @@ class EcgNet(nn.Module):
                 "mse"    : np.mean(mse), 
                 "r2score": np.mean(r2score), 
                 "epoch"  : epoch}
-                                  
+
+    def predict(self, dataloader, checkpoint):
+        '''Return N samples x 2 array of predictions made by the EmotionNet'''
+        # load the model
+        self.load_state_dict(checkpoint['model_state_dict'])
+
+        self.eval()
+
+        predictions = []
+        for data in tqdm(dataloader):
+            output = self.forward(data['features'].to(self.device, dtype=torch.float))
+            predictions.append(output.detach().to('cpu').numpy())
+        
+        predictions = np.concatenate(predictions, axis=0)
+        
+        return predictions
+                                       
 # Multi-modal EMOTION recognition net 
 class EmotionNet(nn.Module):
 
@@ -997,7 +1019,7 @@ class EmotionNet(nn.Module):
                 scheduler.step()
            
             # save torch model
-            if epoch % 10 == 9:
+            if epoch % 100 == 99:
                 model_path = model_save_path + '/net_' + str(epoch+1) + '.pth' 
 
                 torch.save({ 'epoch': epoch+1,
@@ -1005,11 +1027,12 @@ class EmotionNet(nn.Module):
                              'optimizer_state_dict': optimizer.state_dict(),
                              'loss': self.loss,
                             }, model_path)
-                
-                ax[0].set_xlim([1.5, 6])
-                ax[0].set_ylim([1.5, 6])
-                ax[1].set_xlim([1.5, 6])
-                ax[1].set_ylim([1.5, 6])
+            
+            if epoch % 50 == 49:
+                ax[0].set_xlim([1, 6])
+                ax[0].set_ylim([1, 6])
+                ax[1].set_xlim([1, 6])
+                ax[1].set_ylim([1, 6])
                 plt.suptitle('DNN')
                 plt.pause(.01)
 
@@ -1080,6 +1103,25 @@ class EmotionNet(nn.Module):
                 "Arousal": arousal_ae,
                 "Valence": valence_ae, 
                 "epoch": epoch}
+    
+    def predict(self, dataloader, checkpoint):
+        '''Return N samples x 2 array of predictions made by the EmotionNet'''
+        # load the model
+        self.load_state_dict(checkpoint['model_state_dict'])
+
+        self.eval()
+
+        predictions = []
+        for data in tqdm(dataloader):
+            output = self.forward(data['features'].to(self.device, dtype=torch.float))
+            predictions.append(output.detach().to('cpu').numpy())
+        
+        predictions = np.concatenate(predictions, axis=0)
+        
+        return predictions
+        
+
+            
  
 
 ##########################################################################

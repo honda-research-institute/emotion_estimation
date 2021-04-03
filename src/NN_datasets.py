@@ -40,10 +40,10 @@ class EcgDataset(torch.utils.data.Dataset):
         
         ecg = self.features[idx, :]
         
-        if not self.labels:
-            labels = []
-        else:
+        if len(self.labels) > 0:
             labels = self.labels[idx, :]
+        else:
+            labels = []
 
         sample = {'features': torch.tensor(ecg, dtype=torch.float, requires_grad=True), 'labels': torch.tensor(labels, dtype=torch.float, requires_grad=True)}
         return sample
@@ -84,7 +84,11 @@ class EcgFeatDataset(torch.utils.data.Dataset):
             idx = idx.tolist()
         
         ecg = self.features[idx, :]
-        labels = self.labels[idx, :]
+        
+        if len(self.labels) > 0:
+            labels = self.labels[idx, :]
+        else:
+            labels = []
 
         sample = {'features': torch.tensor(ecg, dtype=torch.float, requires_grad=True), 'labels': torch.tensor(labels, dtype=torch.float, requires_grad=True)}
         return sample
@@ -110,6 +114,11 @@ class MultiFeatDataset(torch.utils.data.Dataset):
         if torch.is_tensor(idx):
             idx = idx.tolist()
         
+        if len(self.labels) > 0:
+            labels = self.labels[idx, :]
+        else:
+            labels = []
+            
         sample = {'features': torch.tensor(self.features[idx, :], dtype=torch.float, requires_grad=True), 
-                  'labels': torch.tensor(self.labels[idx, :], dtype=torch.float, requires_grad=True)}
+                  'labels': torch.tensor(labels, dtype=torch.float, requires_grad=True)}
         return sample

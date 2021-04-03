@@ -6,9 +6,9 @@
 
 ### Processing: 
 - Physiological data from each channel is standardized using the mean and standard deviation. This step is carried for all the subjects to remove individual differences 
-- Some GSR signals had inf symbol in the data, this is replaced by zeros in the csv files
+- Some GSR signals had inf symbol in the data, these are replaced by zeros manually in the csv files
 - Subject main-exp-6333-m has data missing from the last 5 min of event 2, the corresponding information is removed from s2_pics.csv
 
 
-### EMG paper:
-- Repeatability of facial electromyography (EMG) activity over corrugator supercilii and zygomaticus major on differentiating various emotions
+<!-- ### EMG paper: -->
+<!-- - Repeatability of facial electromyography (EMG) activity over corrugator supercilii and zygomaticus major on differentiating various emotions -->

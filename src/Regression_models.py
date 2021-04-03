@@ -7,11 +7,9 @@ import pandas as pd
 def remove_zero_rows_from_data(features, labels):
     """Clean the dataset by completely removing a row that holds zero value for all its features 
     """
-    ind = []
+    ind = np.arange(features.shape[0])
     
-    for i, row in enumerate(features):
-        if np.linalg.norm(row) > 0:
-            ind.append(i)
+    ind = ind[np.linalg.norm(features, axis=1) > 0]
     
     cleaned_feats  = features[ind, :]
     cleaned_labels = labels[ind, :]

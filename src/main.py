@@ -468,7 +468,7 @@ with skip_run('skip', 'Extract all handcrafted features from each modality for i
 ##########################################################################
 #----- Train conventional Random Forest regression individual features -----#
 ##########################################################################
-with skip_run('skip', 'train Regressor on the ECG-SSL features') as check, check():
+with skip_run('skip', 'train RF Regressor on the ECG-SSL features') as check, check():
     if ~os.path.exists(Path(__file__).parents[1] / 'models/Regression_models/'):
         utils.makedirs(Path(__file__).parents[1] / 'models/Regression_models/')
         
@@ -502,7 +502,7 @@ with skip_run('skip', 'train Regressor on the ECG-SSL features') as check, check
 
     train_test_regression_model(modality, train_dataset, test_dataset, regressor, clean_features=True, model_save_path=model_save_path, pic_save_path=pic_save_path, results_save_path=results_save_path)
 
-with skip_run('skip', 'train Regressor using hand-crafted features for each modalities') as check, check():
+with skip_run('skip', 'train RF Regressor using hand-crafted features for each modalities') as check, check():
     
     if ~os.path.exists(Path(__file__).parents[1] / 'models/Regression_models/'):
         utils.makedirs(Path(__file__).parents[1] / 'models/Regression_models/')
@@ -717,8 +717,6 @@ with skip_run('skip', 'Run the multimodal regression using RF and DNN') as check
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print('Train the model on: {}'.format(device))
 
-    torch_file = 'model2_1/net_200.pth'
-    checkpoint = torch.load(config['torch']['SSL_models'] + torch_file, map_location=device)
 
     net = EmotionNet(num_feats=train_dataset['features'].shape[1], device=device, config=config)
     net.to(device)

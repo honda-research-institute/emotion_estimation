@@ -106,26 +106,27 @@ def extract_emg_features(emg_signal, sampling_rate=250):
         
         time_feats, freq_feats = [], []
         for key in processed_emg['TimeDomain'].keys():
-            if key == 'MAVSLPk':
-                time_feats + processed_emg['TimeDomain'][key]
-            elif key == 'HIST':
-                for val in processed_emg['TimeDomain'][key]:
-                    time_feats.append(processed_emg['TimeDomain'][key][val]['ZC'])
-                    time_feats.append(processed_emg['TimeDomain'][key][val]['WAMP'])
-            else:
-                time_feats.append(processed_emg['TimeDomain'][key])
+            if key != 'LOG':
+                if key == 'MAVSLPk':
+                    time_feats + processed_emg['TimeDomain'][key]
+                elif key == 'HIST':
+                    for val in processed_emg['TimeDomain'][key]:
+                        time_feats.append(processed_emg['TimeDomain'][key][val]['ZC'])
+                        time_feats.append(processed_emg['TimeDomain'][key][val]['WAMP'])
+                else:
+                    time_feats.append(processed_emg['TimeDomain'][key])
 
         for key in processed_emg['FrequencyDomain'].keys():
-            # if key != 'FR': # see if FR feature should be inlcuded or not as sometimes it returns a Inf value, 
-            freq_feats.append(processed_emg['FrequencyDomain'][key])
+            if key != 'FR': # see if FR feature should be inlcuded or not as sometimes it returns a Inf value, 
+                freq_feats.append(processed_emg['FrequencyDomain'][key])
 
         total_feats = np.concatenate((time_feats, freq_feats), axis=0).reshape(-1, 1)
         total_feats = np.nan_to_num(total_feats, nan=0.0, posinf=0.0, neginf=0.0) # replace the nan and inf values with 0.0
         emg_features.append(total_feats)
 
-    emg_features = np.concatenate(emg_features, axis=1)
+    emg_features = (np.concatenate(emg_features, axis=1)).reshape(1, 3, -1)
     
-    return emg_features.reshape(1, 3, -1)
+    return emg_features
 
 
 def extract_all_features(data_dic, config):

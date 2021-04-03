@@ -16,9 +16,9 @@ Note: The package uses pytorch which requires cuda installation. The program wil
             interim, processed and features folders have the processed data in the form of dictionaries stored in h5 format. Run ```h5ls -r {file}``` to check the structure of data in a particular .h5 file. 
 
 - **docs**: have the images foder that consists of the results obtained from regression
-    - **docs/CNN_architecture.md**: details about the CNN architecture
-    - **docs/HRI_data.md**: details about processing HRI_dataset
-    - **docs/results_report.md**: results 
+    - **[docs/CNN_architecture.md](docs/CNN_architecture.md)**: details about the CNN architecture
+    - **[docs/HRI_data.md](docs/HRI_data.md)**: details about processing HRI_dataset
+    - **[docs/results_report.md](docs/results_report.md)**: results 
 
 - **models**: Containes the trained models
     - **SSL_models**: Trained models '.pth' format for Self-Supervised Representation learning.

@@ -177,7 +177,8 @@ def parse_hri_data_using_events(modality, filepath, col_names, skiprows, usecols
                     delimiter=',',
                     names=col_names,
                     skiprows=skiprows,
-                    usecols=usecols)
+                    usecols=usecols,
+                    dtype=np.float32)
     df['time'] -= df['time'].iloc[0]
 
     # high pass filter the ecg data
@@ -239,21 +240,25 @@ def parse_hri_data_using_events(modality, filepath, col_names, skiprows, usecols
 
     return epochs, labels
 
-def parse_hri_data(modality, filepath, col_names, skiprows, usecols, arousal, valence, percent_overlap, config, standardize=False, event_time=[]):
+def parse_hri_data(modality, filepath, col_names, skiprows, usecols, arousal, valence, percent_overlap, config, standardize=False, input_scaler=None, event_time=[]):
     epochs, labels = [], []
     df = pd.read_csv(filepath,
                     delimiter=',',
                     names=col_names,
                     skiprows=skiprows,
-                    usecols=usecols)
+                    usecols=usecols,
+                    dtype=np.float32)
+                    
     df['time'] -= df['time'].iloc[0]
 
     # high pass filter the ecg data
     if modality == 'ecg':
         df[modality] = utils.butter_highpass_filter(df[modality].to_numpy(), cutoff=0.5, fs=config['hri']['sfreq'][modality], order=5)
 
+    scaler = input_scaler
     if standardize:
-        scaler = StandardScaler()
+        if not input_scaler:
+            scaler = StandardScaler()
         # standardize all modalities
         if modality == 'emg':
             for key in df.keys():
@@ -302,8 +307,8 @@ def parse_hri_data(modality, filepath, col_names, skiprows, usecols, arousal, va
         for eve in range(0, event_len+1, sliding_window):
             if (event_len - eve) > epoch_len:
                 epochs.append(event_data[:, eve:eve+epoch_len].reshape(1, len(col_names)-1, -1))   
-    
-    return epochs, labels
+
+    return epochs, labels, scaler
 
 # read the data from folder and create a dictionary for all the subjects
 def read_raw_hri_dataset(load_path, save_path, percent_overlap, config, save=True, standardize=False, scenarios=[1, 2], pick_sample=None):
@@ -385,7 +390,7 @@ def read_raw_hri_dataset(load_path, save_path, percent_overlap, config, save=Tru
     return Data
 
 # read the individual subject data from the provided path 
-def read_individual_hri_dataset(load_path, save_path, percent_overlap, config, save=True, standardize=False, calib=False):
+def read_individual_hri_dataset(load_path, save_path, percent_overlap, config, save=True, standardize=False, input_scaler=None, calib=False):
     """Extract the ECG, EMG, GSR, PPG, RSP data from the csv files of the HRI dataset 
 
     Args:
@@ -395,6 +400,7 @@ def read_individual_hri_dataset(load_path, save_path, percent_overlap, config, s
         config (dictionary): imported configuration from the config.yml file 
         save (bool, optional): flag to save the extracted data. Defaults to True.
         standardize (bool, optional): standardize (z-score) the individual data. Defaults to False.
+        input_scaler(dictionary): dictionary of StandardScaler objects for each modality
         pick_sample (str): options:['first', 'last', None]
                         'first' : first 3 samples from the 15 s event
                         'last'  : last 3 samples from the 15 s event
@@ -410,7 +416,6 @@ def read_individual_hri_dataset(load_path, save_path, percent_overlap, config, s
     for file in os.listdir(os.path.join(Path(__file__).parents[1], load_path)):
         scenario = file.split('_')
         filepath = os.path.join(Path(__file__).parents[1], load_path, file)
-
         if calib:
             if scenario[-1].lower() == 'pics.csv':
                 file_path = os.path.join(Path(__file__).parents[1], load_path, file)
@@ -425,18 +430,27 @@ def read_individual_hri_dataset(load_path, save_path, percent_overlap, config, s
         else:
             event_time = []
 
+    scaler_dict = {}      
+    for file in os.listdir(os.path.join(Path(__file__).parents[1], load_path)):
+        scenario = file.split('_')
+        filepath = os.path.join(Path(__file__).parents[1], load_path, file)
         if scenario[-1].lower() in config['hri']['file_names']:
             modality = scenario[-1].lower().split('.')[0]
+            if input_scaler:
+                scaler=input_scaler[modality.upper()]
+            else:
+                scaler=None
+
             if modality == 'ecg':
-                epochs, labels = parse_hri_data(modality, filepath, ['time', modality], 3, [0,1], arousal, valence, percent_overlap, config, standardize=standardize, event_time=event_time)
+                epochs, labels, scaler_dict[modality.upper()] = parse_hri_data(modality, filepath, ['time', modality], 3, [0,1], arousal, valence, percent_overlap, config, standardize=standardize, input_scaler=scaler, event_time=event_time)
             elif modality == 'emg':
-                epochs, labels = parse_hri_data(modality, filepath, ['time', 'emg1', 'emg2', 'emg3'], 3, [0,1,3,5], arousal, valence, percent_overlap, config, standardize=standardize, event_time=event_time)
+                epochs, labels, scaler_dict[modality.upper()] = parse_hri_data(modality, filepath, ['time', 'emg1', 'emg2', 'emg3'], 3, [0,1,3,5], arousal, valence, percent_overlap, config, standardize=standardize, input_scaler=scaler, event_time=event_time)
             elif modality == 'gsr':
-                epochs, labels = parse_hri_data(modality, filepath, ['time', modality], 2, [0,1], arousal, valence, percent_overlap, config, standardize=standardize, event_time=event_time)
+                epochs, labels, scaler_dict[modality.upper()] = parse_hri_data(modality, filepath, ['time', modality], 2, [0,1], arousal, valence, percent_overlap, config, standardize=standardize, input_scaler=scaler, event_time=event_time)
             elif modality == 'ppg':
-                epochs, labels = parse_hri_data(modality, filepath, ['time', modality], 2, [0,1], arousal, valence, percent_overlap, config, standardize=standardize, event_time=event_time)
+                epochs, labels, scaler_dict[modality.upper()] = parse_hri_data(modality, filepath, ['time', modality], 2, [0,1], arousal, valence, percent_overlap, config, standardize=standardize, input_scaler=scaler, event_time=event_time)
             elif modality == 'rsp':
-                epochs, labels = parse_hri_data(modality, filepath, ['time', modality], 2, [0,1], arousal, valence, percent_overlap, config, standardize=standardize, event_time=event_time)
+                epochs, labels, scaler_dict[modality.upper()] = parse_hri_data(modality, filepath, ['time', modality], 2, [0,1], arousal, valence, percent_overlap, config, standardize=standardize, input_scaler=scaler, event_time=event_time)
             
             features = np.concatenate(epochs, axis=0)
 
@@ -454,7 +468,7 @@ def read_individual_hri_dataset(load_path, save_path, percent_overlap, config, s
     if save:
         dd.io.save(save_path, data)           
 
-    return data
+    return data, scaler_dict
 
 
 def split_data_train_test_valid(data, labels, test_size=0.2, shuffle=True, random_state=None):
