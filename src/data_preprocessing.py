@@ -240,6 +240,56 @@ def parse_hri_data_using_events(modality, filepath, col_names, skiprows, usecols
 
     return epochs, labels
 
+def parse_hri_data_with_transition(modality, filepath, col_names, skiprows, usecols, event_time, arousal, valence, config, standardize=False, transition_delay_time=0.0):
+    epochs, labels = [], []
+    df = pd.read_csv(filepath,
+                     delimiter=',',
+                     names=col_names,
+                     skiprows=skiprows,
+                     usecols=usecols,
+                     dtype=np.float32)
+    df['time'] -= df['time'].iloc[0]
+
+    # high pass filter the ecg data
+    if modality == 'ecg':
+        df[modality] = utils.butter_highpass_filter(df[modality].to_numpy(), cutoff=0.5, fs=config['hri']['sfreq'][modality], order=5)
+
+    if standardize:
+        scaler = StandardScaler()
+        # standardize all modalities
+        if modality == 'emg':
+            for key in df.keys():
+                if key != 'time':
+                    df[key] = scaler.fit_transform(df[key].to_numpy().reshape(-1, 1))
+        # elif (modality == 'ecg') or (modality == 'gsr'):
+        else:
+            df[modality] = scaler.fit_transform(df[modality].to_numpy().reshape(-1, 1))
+
+    # number of frames in an event (image)
+    event_len = config['hri']['event_window'] * config['hri']['sfreq'][modality]
+    # number of frames in a window
+    epoch_len = config['window_size'] * config['hri']['sfreq'][modality]
+    # frame offset between windows
+    sliding_window = int((1 - config['hri']['percent_overlap']) * config['hri']['sfreq'][modality])
+
+    print('modality:', modality)
+    print('df shape:', df.shape)
+    print('epoch_len:', epoch_len)
+    # split the data based on the events mentioned in pics.csv
+    for eve in range(0, df.shape[0], sliding_window):
+        if (eve + epoch_len) <= df.shape[0]:
+            window_end_time = df['time'].iloc[eve+epoch_len-1] - transition_delay_time
+            epochs.append(df.iloc[eve:eve+epoch_len, 1:].to_numpy().reshape(1, len(col_names)-1, -1))
+            # find the event corresponding to window_end_time
+            window_end_event_idx = [i for i, t in enumerate(event_time) if t < window_end_time]
+            window_end_event_idx = window_end_event_idx[-1]
+            labels.append(np.array([arousal[window_end_event_idx], valence[window_end_event_idx]]).reshape(1, -1))
+
+    print('epoch count:', len(epochs), ', shape:', epochs[0].shape)
+    print('label count:', len(labels), ', shape:', labels[0].shape)
+    return epochs, labels
+
+
 def parse_hri_data(modality, filepath, col_names, skiprows, usecols, arousal, valence, percent_overlap, config, standardize=False, input_scaler=None, event_time=[]):
     epochs, labels = [], []
     df = pd.read_csv(filepath,
@@ -388,6 +438,84 @@ def read_raw_hri_dataset(load_path, save_path, percent_overlap, config, save=Tru
         dd.io.save(save_path, Data)           
 
     return Data
+
+# read HRI dataset with transition between images
+def read_raw_hri_dataset_with_transition(load_path, config, save_path=None, standardize=False, scenarios=[1, 2], transition_delay_time=0.0):
+    """Extract the ECG, EMG, GSR, PPG, RSP data from the csv files of the HRI dataset
+
+    Args:
+        load_path (string): path to the dataset
+        config (dictionary): imported configuration from the config.yml file
+        save_path (string, optional): path to save the data
+        standardize (bool, optional): standardize (z-score) the individual data. Defaults to False.
+        scenarios (list, optional): provide [1, 2] when trying to read the emotion data from each scenario, otherwise, provide [''] (This is to process the human-hugrobot interaction data)
+
+    Returns:
+        dictionary: dictionary of imported data from the files
+    """
+    Data = collections.defaultdict(dict)
+
+    for subject, dir in enumerate(os.listdir(Path(__file__).parents[1] / load_path)):
+        data = collections.defaultdict(dict)
+
+        # there are two scenarios
+        for scenario_type in scenarios:
+            event_dic = collections.defaultdict(dict)
+            event_time, valence, arousal = [], [], []
+
+            # load picture information
+            for file in os.listdir(os.path.join(Path(__file__).parents[1], load_path, dir)):
+                scenario = file.split(str(scenario_type) + '_')
+                if scenario[-1].lower() == 'pics.csv':
+                    file_path = os.path.join(Path(__file__).parents[1], load_path, dir, file)
+                    dataframe = pd.read_csv(file_path,
+                                            delimiter=',',
+                                            names=['time', 'arousal', 'valence'],
+                                            skiprows=1,
+                                            usecols=[0,1,3])
+                    arousal = dataframe['arousal'].to_numpy()
+                    valence = dataframe['valence'].to_numpy()
+                    event_time = dataframe['time'].to_numpy()
+
+            # load sensor data
+            for file in os.listdir(os.path.join(Path(__file__).parents[1], load_path, dir)):
+                scenario = file.split(str(scenario_type) + '_')
+                filepath = os.path.join(Path(__file__).parents[1], load_path, dir, file)
+
+                if scenario[-1].lower() in config['hri']['file_names']:
+                    modality = scenario[-1].lower().split('.')[0]
+
+                    if modality == 'ecg':
+                        epochs, labels = parse_hri_data_with_transition(modality, filepath, ['time', modality], 3, [0,1], event_time, arousal, valence, config, standardize=standardize, transition_delay_time=transition_delay_time)
+                    elif modality == 'emg':
+                        epochs, labels = parse_hri_data_with_transition(modality, filepath, ['time', 'emg1', 'emg2', 'emg3'], 3, [0,1,3,5], event_time, arousal, valence, config, standardize=standardize, transition_delay_time=transition_delay_time)
+                    elif modality == 'gsr':
+                        epochs, labels = parse_hri_data_with_transition(modality, filepath, ['time', modality], 2, [0,1], event_time, arousal, valence, config, standardize=standardize, transition_delay_time=transition_delay_time)
+                    elif modality == 'ppg':
+                        epochs, labels = parse_hri_data_with_transition(modality, filepath, ['time', modality], 2, [0,1], event_time, arousal, valence, config, standardize=standardize, transition_delay_time=transition_delay_time)
+                    elif modality == 'rsp':
+                        epochs, labels = parse_hri_data_with_transition(modality, filepath, ['time', modality], 2, [0,1], event_time, arousal, valence, config, standardize=standardize, transition_delay_time=transition_delay_time)
+
+                    features = np.concatenate(epochs, axis=0)
+                    labels   = np.concatenate(labels, axis=0)
+
+                    if modality.lower() == 'ecg':
+                        event_dic['labels'] = labels
+
+                    #FIXME: GSR files have some 'inf' in the files which are manually fixed
+                    event_dic[modality.upper()] = features
+
+            data['event'+ str(scenario_type)] = event_dic
+
+            print('subject:', subject, 'scenario:', scenario_type, ', feature size:', event_dic[modality.upper()].shape)
+
+        Data['S' + str(subject+1)] = data
+
+    if save_path is not None:
+        dd.io.save(save_path, Data)
+
+    return Data
+
 
 # read the individual subject data from the provided path 
 def read_individual_hri_dataset(load_path, save_path, percent_overlap, config, save=True, standardize=False, input_scaler=None, calib=False):
