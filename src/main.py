@@ -28,16 +28,17 @@ from sklearn.preprocessing import StandardScaler
 
 import xgboost as xgb
 
-from NN_models import SelfSupervisedNet, SelfSupervisedNet2, SelfSupervisedNetFeats, EcgNet, EmotionNet
+from NN_models import SelfSupervisedNet, SelfSupervisedNet2, SelfSupervisedNetFeats, EcgNet, EmotionNet, EmotionNetLSTM
 from NN_datasets import EcgDataset, EcgFeatDataset, MultiFeatDataset
 
 from data_preprocessing import (read_raw_dreamer_dataset, read_raw_wesad_dataset, 
                                 read_raw_hri_dataset, split_data_train_test_valid,
+                                read_raw_hri_dataset_with_transition,
                                 split_modalities_train_test_valid)
 from feature_extraction import extract_gsr_features, extract_all_features
 from Regression_models import train_test_regression_model, test_pretrained_regression_model
 
-config = yaml.load(open(Path(__file__).parents[1] / 'config.yml'), Loader=yaml.SafeLoader)
+config = yaml.load(open(Path(__file__).resolve().parents[1] / 'config.yml'), Loader=yaml.SafeLoader)
 window_len = config['freq'] * config['window_size']
 
 
@@ -102,6 +103,37 @@ with skip_run('skip', 'prepare raw dataset for ECG-SSL') as check, check():
 
     dd.io.save(config['raw_data_pool'], Data)
 
+
+# katsu: same as above but includes transition
+with skip_run('skip', 'prepare raw dataset for ECG-SSL with transition') as check, check():
+    # create data files
+    read_raw_hri_dataset_with_transition(config['hri']['load_path'], config, save_path=config['hri']['interim_transition'], standardize=True, transition_delay_time=1.0)
+
+    hri_data = []
+    hri_labels = []
+
+    # load HRI dataset
+    hri_dataset = dd.io.load(config['hri']['interim_transition'])
+    for subject in hri_dataset.keys():
+        for event in ['event1', 'event2']:
+            hri_data.append(hri_dataset[subject][event]['ECG'].reshape(-1, window_len))
+            hri_labels.append(hri_dataset[subject][event]['labels'])
+
+    hri_data    = np.concatenate(hri_data, axis=0)
+    hri_labels = np.concatenate(hri_labels, axis=0)
+
+    # split the datasets into train, test and validation sets
+    ecg_train, ecg_test, ecg_valid, _, _, _ = split_data_train_test_valid(hri_data, hri_labels, test_size=0.5, shuffle=True, random_state=1729)
+
+    Data = { "ECG_train": ecg_train,
+             "ECG_test" : ecg_test,
+             "ECG_valid": ecg_valid}
+
+    print('saving pool data...')
+    dd.io.save(config['raw_data_pool_transition'], Data)
+    print('done')
+
+
 # Transform each data point into 7 transformations and use it for SSL training
 with skip_run('skip', 'prepare transform dataset') as check, check():
     Data = dd.io.load(config['raw_data_pool'])
@@ -115,6 +147,7 @@ with skip_run('skip', 'prepare transform dataset') as check, check():
         
         ecg_train.append(tr_signal)
         y_train.append(tr_labels)
+        print(i, '/', Data['ECG_train'].shape[0], ', tr_signal.shape:', tr_signal.shape, ', tr_labels.shape:', tr_labels.shape)
     
     ecg_train  = np.concatenate(ecg_train, axis=0)
     y_train    = np.concatenate(y_train, axis=0)
@@ -149,6 +182,82 @@ with skip_run('skip', 'prepare transform dataset') as check, check():
     dd.io.save(config['transformed_data'], {'train': train_data,
                                             'test' : test_data,
                                             'valid': valid_data})
+
+
+# same as above but with transition
+# save only half the frames because the original data size is too big
+with skip_run('skip', 'prepare transform dataset with transition') as check, check():
+    Data = dd.io.load(config['raw_data_pool_transition'])
+
+    ecg_train, ecg_test, ecg_valid = [], [], []
+    y_train, y_test, y_valid = [], [], []
+    interval = 2
+
+    print('transform training data...')
+    for i in range(0, Data['ECG_train'].shape[0], interval):
+        signal = Data['ECG_train'][i, :].reshape(-1,1)
+        tr_signal, tr_labels = sgtf.apply_all_transformations(signal, noise_param, scale_param, permu_param, tw_piece_param, twsf_param, 1/twsf_param)
+
+        ecg_train.append(tr_signal)
+        y_train.append(tr_labels)
+        print(i, '/', Data['ECG_train'].shape[0])
+
+    print('concatenate 1')
+    ecg_train = np.concatenate(ecg_train, axis=0)
+    print('concatenate 2')
+    y_train = np.concatenate(y_train, axis=0)
+    train_data = { "ECG"    : ecg_train,
+                   "labels" : y_train}
+    ecg_train = []
+    y_train = []
+    Data['ECG_train'] = []
+
+    print('transform test data...')
+    for i in range(0, Data['ECG_test'].shape[0], interval):
+        signal = Data['ECG_test'][i, :].reshape(-1,1)
+        tr_signal, tr_labels = sgtf.apply_all_transformations(signal, noise_param, scale_param, permu_param, tw_piece_param, twsf_param, 1/twsf_param)
+
+        ecg_test.append(tr_signal)
+        y_test.append(tr_labels)
+        print(i, '/', Data['ECG_test'].shape[0])
+
+    ecg_test  = np.concatenate(ecg_test, axis=0)
+    y_test    = np.concatenate(y_test, axis=0)
+    test_data  = { "ECG"    : ecg_test,
+                   "labels" : y_test}
+    ecg_test = []
+    y_test = []
+    Data['ECG_test'] = []
+
+    print('transform validation data...')
+    for i in range(0, Data['ECG_valid'].shape[0], interval):
+        signal = Data['ECG_valid'][i, :].reshape(-1,1)
+        tr_signal, tr_labels = sgtf.apply_all_transformations(signal, noise_param, scale_param, permu_param, tw_piece_param, twsf_param, 1/twsf_param)
+
+        ecg_valid.append(tr_signal)
+        y_valid.append(tr_labels)
+
+        print(i, '/', Data['ECG_valid'].shape[0])
+
+    print('concatenate 1')
+    ecg_valid  = np.concatenate(ecg_valid, axis=0)
+    print('concatenate 2')
+    y_valid    = np.concatenate(y_valid, axis=0)
+
+    print('concatenate 3')
+    valid_data = { "ECG"    : ecg_valid,
+                   "labels" : y_valid}
+
+    ecg_valid = []
+    y_valid = []
+    Data['ECG_valid'] = []
+
+    print('save transformed data...')
+    dd.io.save(config['transformed_data_transition'], {'train': train_data,
+                                                       'test' : test_data,
+                                                       'valid': valid_data})
+    print('done')
+
 
 # network module for self supervised representation learning using ECG
 with skip_run('skip', 'train SSL model1') as check, check():
@@ -217,6 +326,42 @@ with skip_run('skip', 'train SSL model2') as check, check():
     scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.95)
 
     net.train_model(train_dataloader, valid_dataloader, optimizer, scheduler=scheduler, batch_size=batch_size, epochs=200, task_weights=task_weights)
+
+
+# same as above but with transition
+with skip_run('run', 'train SSL model2 with transition') as check, check():
+    # create the directories to store the runs and pickle models
+    if ~os.path.exists("runs/SSL_runs"):
+        utils.makedirs("runs/SSL_runs")
+
+    if ~os.path.exists("models/SSL_models"):
+        utils.makedirs("models/SSL_models")
+
+    batch_size = 64
+    window_size = config['freq'] * config['window_size']
+    task_weights = [0.195, 0.195, 0.195, 0.0125, 0.0125, 0.195, 0.195]
+
+    train_data = EcgDataset(config['transformed_data_transition'], window_size, data_group='/train')
+    test_data  = EcgDataset(config['transformed_data_transition'], window_size, data_group='/test')
+    valid_data = EcgDataset(config['transformed_data_transition'], window_size, data_group='/valid')
+
+    train_dataloader = torch.utils.data.DataLoader(train_data, batch_size=batch_size, shuffle=True)
+    test_dataloader  = torch.utils.data.DataLoader(test_data, batch_size=batch_size, shuffle=True)
+    valid_dataloader = torch.utils.data.DataLoader(valid_data, batch_size=batch_size, shuffle=True)
+
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    print('Train the model on: {}'.format(device))
+
+    net = SelfSupervisedNet2(device, config)
+    net.to(device)
+
+    # see if an exponential decay learning rate scheduler is required
+    # optimizer = optim.SGD(net.parameters(), lr=0.01, momentum=0.9)
+    optimizer = optim.Adam(net.parameters(), lr=1e-3, weight_decay=1e-3)
+    scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.95)
+
+    net.train_model(train_dataloader, valid_dataloader, optimizer, scheduler=scheduler, batch_size=batch_size, epochs=200, task_weights=task_weights)
+
 
 # Test the desired self supervised learning model 
 with skip_run('skip', 'test SSL models') as check, check():
@@ -337,6 +482,40 @@ with skip_run('skip', 'extract ECG-SSL features for each individual') as check, 
         Data[subject] = data
     dd.io.save(config['hri_ECG_SSL_feats'], Data)
 
+
+# katsu: same as above but with transition
+with skip_run('skip', 'extract ECG-SSL features for each individual with transition') as check, check():
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    print('device:', device)
+
+    # batch size here is provided while extracting the features to prevent CUDA out of memory issue
+    batch_size = 128
+    window_size = config['freq'] * config['window_size']
+
+    ckpt_file  = 'model2_1/net_200.pth'
+    print('loading model')
+    checkpoint = torch.load(config['torch']['SSL_models'] + ckpt_file, map_location=device)
+    net = SelfSupervisedNetFeats(load_model=True, checkpoint=checkpoint, device=device, config=config).to(device)
+
+    print('loading data')
+    data_dic = dd.io.load(config['hri']['interim_transition'])
+
+    Data = collections.defaultdict(dict)
+    for subject in data_dic:
+        data = collections.defaultdict(dict)
+        for event in data_dic[subject]:
+            print('subject:', subject, ', event:', event)
+            data_group = str('/data/' + subject + '/' + event)
+            train_data = EcgDataset(config['hri']['interim_transition'], window_size, data_group=data_group)
+            train_dataloader = torch.utils.data.DataLoader(train_data, batch_size=batch_size, shuffle=False)
+            feat_train, labels_train = net.return_SSL_feats(train_dataloader)
+
+            data[event] = {"ECG": feat_train, "labels": labels_train}
+
+        Data[subject] = data
+    dd.io.save(config['hri_ECG_SSL_feats_transition'], Data)
+
+
 # Extract the handcrafted features for each individual
 with skip_run('skip', 'Extract all handcrafted features from each modality for individual') as check, check():
     data_dic = dd.io.load(config['hri']['interim_standardized'])
@@ -349,7 +528,24 @@ with skip_run('skip', 'Extract all handcrafted features from each modality for i
 
         Data[subject] = data 
     dd.io.save(config['hri_feats'], Data)
-       
+
+
+# katsu: same as above but with transition
+# currently unsable because this generates a bunch of errors
+with skip_run('skip', 'Extract all handcrafted features from each modality for individual with transition') as check, check():
+    data_dic = dd.io.load(config['hri']['interim_transition'])
+    Data = collections.defaultdict(dict)
+    for subject in data_dic:
+        data = collections.defaultdict(dict)
+        for event in data_dic[subject]:
+            features = extract_all_features(data_dic[subject][event], config)
+            data[event] = features
+
+        Data[subject] = data
+
+    dd.io.save(config['hri_feats_transition'], Data)
+
+
 # Extract the ECG features from the Self Supervised Net (N samples x 128 features)
 with skip_run('skip', 'Extract ECG-SSL feature dataset from pooled ECG data') as check, check():
     
@@ -826,22 +1022,29 @@ with skip_run('skip', 'Run multimodal regression using RF and DNN and test it on
     net.train_model(train_dataloader, test_dataloader, optimizer, scheduler=scheduler, batch_size=batch_size, epochs=500)
 
 # 4) Test how small the training dataset could be after which the dataset diverges
+# test No. 22 in Katsu's note
 with skip_run('skip', 'Multimodal regression - split features into train and test sets based on increasing valence levels') as check, check():
     # train RF and DNN model if True, else, test the pre-trained models
-    train_model = False
+    train_model = True
     
     data = dd.io.load(config['hri_feats'])
     data_ECG_SSL = dd.io.load(config['hri_ECG_SSL_feats'])
 
     Features, Labels = [], []
-    for sub in data:
+
+    target_subs = ['S5']
+    #modalities = ['EMG', 'GSR', 'PPG', 'RSP']
+    modalities = []
+    #for sub in data:
+    for sub in target_subs:
+        print('sub:', sub)
         for event in data[sub]:
             features, labels = [], []
             labels = data[sub][event]['labels']
 
             # use ECG-SSL, EMG, GSR, PPG for regression
             features.append(data_ECG_SSL[sub][event]['ECG'].reshape(data_ECG_SSL[sub][event]['ECG'].shape[0], -1))
-            for modality in ['EMG', 'GSR', 'PPG', 'RSP']:
+            for modality in modalities:
                 if modality in data[sub][event].keys():
                     # normalize the features and then append them for DNN, it does not matter for Random Forest
                     scaler = StandardScaler()
@@ -855,22 +1058,28 @@ with skip_run('skip', 'Multimodal regression - split features into train and tes
     Features = np.concatenate(Features, axis=0)
     Labels   = np.concatenate(Labels, axis=0)
 
+    print('Features shape (all):', Features.shape)
+    print('Labels shape (all):', Labels.shape)
+
     # get the sort indices according to increasing values of valence 
     val_sort_ind = np.argsort(Labels[:, 1])
 
     Features = Features[val_sort_ind, :]
     Labels   = Labels[val_sort_ind, :]
 
-    ind      = np.arange(1, Labels.shape[0])
-    val_diff = np.diff(Labels[:, 1])
-    change_ind = ind[val_diff>0]
+    ind      = np.arange(0, Labels.shape[0])
 
-    change_ind = np.concatenate([[0], change_ind, [ind[-1]]])
+    #change_ind = np.concatenate([[0], change_ind, [ind[-1]]])
+    # every 11 frames
+    change_ind = np.concatenate([np.array(range(0, Labels.shape[0], 11)), [Labels.shape[0]]])
     num_cat    = change_ind.shape[0] - 1
+    print('Number of labels: {}'.format(Labels.shape[0]))
     print('Number of image categories: {}'.format(num_cat))
 
-    step_sizes = [2, 3, 4, 5, 10, 20, 50]
-    NN_model_dic = {'2': 0, '3': 1, '4':2, '5':3, '10':4, '20':5, '50':6}
+    #step_sizes = [2, 3, 4, 5, 10, 20, 50]
+    #NN_model_dic = {'2': 0, '3': 1, '4':2, '5':3, '10':4, '20':5, '50':6}
+    step_sizes = [2, 3, 4, 5, 10, 20]
+    NN_model_dic = {'2': 0, '3': 1, '4':2, '5':3, '10':4, '20':5}
 
     per_train_data, RF_ars_mean, RF_val_mean, NN_ars_mean, NN_val_mean = [], [], [], [], []
     RF_ars_err, RF_val_err, NN_ars_err, NN_val_err = [], [], [], []
@@ -882,12 +1091,12 @@ with skip_run('skip', 'Multimodal regression - split features into train and tes
 
         train_ind = []
         for i in train_categories:
-            train_ind.append(ind[change_ind[i-1]: change_ind[i]])
+            train_ind.append(range(change_ind[i-1], change_ind[i]))
         train_ind = np.concatenate(train_ind, axis=0)
 
         test_ind = []
         for i in test_categories:
-            test_ind.append(ind[change_ind[i-1]: change_ind[i]])
+            test_ind.append(range(change_ind[i-1], change_ind[i]))
         test_ind = np.concatenate(test_ind, axis=0)
         
         train_dataset = {'features': Features[train_ind, :],
@@ -895,21 +1104,20 @@ with skip_run('skip', 'Multimodal regression - split features into train and tes
         
         test_dataset = {'features': Features[test_ind, :],
                         'labels': Labels[test_ind, :]}
-
         
         # Random forest regression
-        print('Now training Random Forest with step size: {}'.format(step_size))
+        # print('Now training Random Forest with step size: {}'.format(step_size))
 
-        model_save_path = str(Path(__file__).parents[1]) + '/models/Regression_models/multimodal_regression/Multi_category_RF_' + str(step_size) + '.pkl'
-        pic_save_path   = str(Path(__file__).parents[1]) + '/docs/Images/multimodal_regression/Multi_category_RF_' + str(step_size) + '.png'
-        results_save_path = str(Path(__file__).parents[1]) + '/results/Regression/multimodal_regression/Multi_category_RF_' + str(step_size) + '.csv'
+        # model_save_path = str(Path(__file__).parents[1]) + '/models/Regression_models/multimodal_regression/Multi_category_RF_' + str(step_size) + '.pkl'
+        # pic_save_path   = str(Path(__file__).parents[1]) + '/docs/Images/multimodal_regression/Multi_category_RF_' + str(step_size) + '.png'
+        # results_save_path = str(Path(__file__).parents[1]) + '/results/Regression/multimodal_regression/Multi_category_RF_' + str(step_size) + '.csv'
 
-        if train_model:
-            regressor = (RandomForestRegressor(n_estimators=200, max_depth=30))
-            RF_trn_ars, RF_trn_val, RF_tst_ars, RF_tst_val = train_test_regression_model('', train_dataset, test_dataset, regressor, clean_features=True, model_save_path=model_save_path, pic_save_path=pic_save_path, results_save_path=results_save_path)
-        else:
-            regressor = pickle.load(open(model_save_path, 'rb'))
-            RF_trn_ars, RF_trn_val, RF_tst_ars, RF_tst_val = test_pretrained_regression_model(modality, train_dataset, test_dataset, regressor, clean_features=True)
+        # if train_model:
+        #     regressor = (RandomForestRegressor(n_estimators=200, max_depth=30))
+        #     RF_trn_ars, RF_trn_val, RF_tst_ars, RF_tst_val = train_test_regression_model('', train_dataset, test_dataset, regressor, clean_features=True, model_save_path=model_save_path, pic_save_path=pic_save_path, results_save_path=results_save_path)
+        # else:
+        #     regressor = pickle.load(open(model_save_path, 'rb'))
+        #     RF_trn_ars, RF_trn_val, RF_tst_ars, RF_tst_val = test_pretrained_regression_model(modality, train_dataset, test_dataset, regressor, clean_features=True)
 
         # Train DNN
         batch_size = 128
@@ -918,22 +1126,28 @@ with skip_run('skip', 'Multimodal regression - split features into train and tes
         train_data = MultiFeatDataset(train_dataset, balance_data=False)
         test_data  = MultiFeatDataset(test_dataset, balance_data=False)
 
-        train_dataloader = torch.utils.data.DataLoader(train_data, batch_size=batch_size, shuffle=False)
-        test_dataloader  = torch.utils.data.DataLoader(test_data, batch_size=batch_size, shuffle=False)
+        # train_dataloader = torch.utils.data.DataLoader(train_data, batch_size=batch_size, shuffle=False)
+        # test_dataloader  = torch.utils.data.DataLoader(test_data, batch_size=batch_size, shuffle=False)
+        # for LSTM
+        batch_size = 64
+        train_dataloader = torch.utils.data.DataLoader(train_data, batch_size=11*batch_size, shuffle=False)
+        test_dataloader  = torch.utils.data.DataLoader(test_data, batch_size=11*batch_size, shuffle=False)
 
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-        net = EmotionNet(num_feats=train_dataset['features'].shape[1], device=device, config=config)
+        #net = EmotionNet(num_feats=train_dataset['features'].shape[1], device=device, config=config)
+        net = EmotionNetLSTM(num_feats=train_dataset['features'].shape[1], seq_len=11, device=device, config=config)
         net.to(device)
 
         # see if an exponential decay learning rate scheduler is required
         # optimizer = optim.SGD(net.parameters(), lr=0.01, momentum=0.9)
         optimizer = optim.Adam(net.parameters(), lr=1e-3, weight_decay=1e-3)
         scheduler = None
+        #scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.95)
 
         if train_model:
             print('Train the model on: {}'.format(device))
-            NN_trn_ars, NN_trn_val, NN_tst_ars, NN_tst_val = net.train_model(train_dataloader, test_dataloader, optimizer, scheduler=scheduler, batch_size=batch_size, epochs=500)
+            NN_trn_ars, NN_trn_val, NN_tst_ars, NN_tst_val = net.train_model(train_dataloader, test_dataloader, optimizer, scheduler=scheduler, batch_size=batch_size, epochs=1000)
         else:
             torch_file = 'MultiModal_model_' + str(NN_model_dic[str(step_size)]) + '/net_500.pth'
 
@@ -955,22 +1169,22 @@ with skip_run('skip', 'Multimodal regression - split features into train and tes
         n_bins = 10
         fig1, ax1 = plt.subplots(2, 2, sharex=True, sharey=True)
         ax1[0, 0].hist(RF_tst_ars, bins=n_bins)
-        ax1[0, 0].set_title('Arousal-RF')
+        ax1[0, 0].set_title('Arousal-RF ({})'.format(step_size))
         ax1[0, 0].set_xlim([0, 4])
         ax1[0, 0].set_ylim([0, 6000])
 
         ax1[0, 1].hist(NN_tst_ars, bins=n_bins)
-        ax1[0, 1].set_title('Arousal-DNN')
+        ax1[0, 1].set_title('Arousal-DNN ({})'.format(step_size))
         ax1[0, 1].set_xlim([0, 4])
         ax1[0, 1].set_ylim([0, 6000])
 
         ax1[1, 0].hist(RF_tst_val, bins=n_bins)
-        ax1[1, 0].set_title('Valence-RF')
+        ax1[1, 0].set_title('Valence-RF ({})'.format(step_size))
         ax1[1, 0].set_xlim([0, 4])
         ax1[1, 0].set_ylim([0, 6000])
 
         ax1[1, 1].hist(NN_tst_val, bins=n_bins)
-        ax1[1, 1].set_title('Valence-DNN')
+        ax1[1, 1].set_title('Valence-DNN ({})'.format(step_size))
         ax1[1, 1].set_xlim([0, 4])
         ax1[1, 1].set_ylim([0, 6000])
         fig1.suptitle('Error histogram')
@@ -1013,7 +1227,7 @@ with skip_run('skip', 'Multimodal regression - split features into train and tes
 
     fig, ax = plt.subplots(1, 2)
     ax[0].errorbar(per_train_data, RF_ars_mean, yerr=RF_ars_err, ecolor='g', mec='g', mfc='g', ms=10, capsize=4, fmt='s', label='RF')
-    ax[0].set_title('Arousal test error')
+    ax[0].set_title('Arousal test error (RF)')
     ax[0].set_ylabel('Mean Absolute Error')
     ax[0].set_xlabel('Percentage training data')
     ax[0].set_ylim([0, 2.5])
@@ -1021,7 +1235,7 @@ with skip_run('skip', 'Multimodal regression - split features into train and tes
     # ax[0].legend()
 
     ax[1].errorbar(per_train_data, RF_val_mean, yerr=RF_val_err, ecolor='g', mec='g', mfc='g', ms=10, capsize=4, fmt='s', label='RF')
-    ax[1].set_title('Valence test error')
+    ax[1].set_title('Valence test error (RF)')
     # ax[1].set_ylabel('Mean Absolute Error')
     ax[1].set_xlabel('Percentage training data')
     ax[1].set_ylim([0, 2.5])
@@ -1029,14 +1243,14 @@ with skip_run('skip', 'Multimodal regression - split features into train and tes
 
     fig, ax = plt.subplots(1, 2)
     ax[0].errorbar(per_train_data, NN_ars_mean, yerr=NN_ars_err, ecolor='k', mec='k', mfc='k', ms=10, capsize=4, fmt='s', label='DNN')
-    ax[0].set_title('Arousal test error')
+    ax[0].set_title('Arousal test error (DNN)')
     ax[0].set_ylabel('Mean Absolute Error')
     ax[0].set_xlabel('Percentage training data')
     ax[0].set_ylim([0, 2.5])
     ax[0].set_xlim([0, 60])
 
     ax[1].errorbar(per_train_data, NN_val_mean, yerr=NN_val_err, ecolor='k', mec='k', mfc='k', ms=10, capsize=4, fmt='s', label='DNN')
-    ax[1].set_title('Valence test error')
+    ax[1].set_title('Valence test error (DNN)')
     # ax[1].set_ylabel('Mean Absolute Error')
     ax[1].set_xlabel('Percentage training data')
     ax[1].set_ylim([0, 2.5])
@@ -1597,5 +1811,218 @@ with skip_run('skip', 'Segregated data based on the Image categories') as check,
         train_test_regression_model('', train_dataset, test_dataset, regressor, clean_features=True, model_save_path=[], pic_save_path=[], results_save_path=[])
             
 
+##############################################################
+# learn dynamics model from windows spanning multiple images #
+##############################################################
+with skip_run('skip', 'Learn dynamics model from windows spanning multiple images') as check, check():
+    train_model = True
+    # number of LSTM cells; if 1, use regular DNN
+    # sequence_length = 11
+    sequence_length = 1
+
+    # load data: SSL
+    # data = dd.io.load(config['hri_feats_transition'])
+    data_ECG_SSL = dd.io.load(config['hri_ECG_SSL_feats_transition'])
+
+    Features, Labels = [], []
+
+    event_end_idx = []
+    target_subs = ['S5']
+    #modalities = ['EMG', 'GSR', 'PPG', 'RSP']
+    modalities = []
+    #for sub in data:
+    for sub in target_subs:
+        print('sub:', sub)
+        for event in data_ECG_SSL[sub]:
+            features, labels = [], []
+            labels = data_ECG_SSL[sub][event]['labels']
+
+            # use ECG-SSL, EMG, GSR, PPG for regression
+            features.append(data_ECG_SSL[sub][event]['ECG'].reshape(data_ECG_SSL[sub][event]['ECG'].shape[0], -1))
+            for modality in modalities:
+                if modality in data[sub][event].keys():
+                    # normalize the features and then append them for DNN, it does not matter for Random Forest
+                    scaler = StandardScaler()
+                    features.append(scaler.fit_transform(data[sub][event][modality].reshape(data[sub][event][modality].shape[0], -1)))
+
+            features = np.concatenate(features, axis=1)
+
+            Features.append(features)
+            Labels.append(labels)
+            if len(event_end_idx) > 0:
+                event_end_idx.append(event_end_idx[-1] + labels.shape[0])
+            else:
+                event_end_idx.append(labels.shape[0])
+            print('event:', event, ', labels.shape:', labels.shape, ', event_end_idx:', event_end_idx[-1])
+
+    Features = np.concatenate(Features, axis=0)
+    Labels   = np.concatenate(Labels, axis=0)
+
+    print('Features shape (all):', Features.shape)
+    print('Labels shape (all):', Labels.shape)
+
+    # categorize into neutral, positive, negative images
+    label_first_idx = [0]
+    label_list = [Labels[0, :]]
+    for i in range(Labels.shape[0]):
+        if i > 0:
+            if Labels[i-1, 0] != Labels[i, 0] or Labels[i-1, 1] != Labels[i, 1]:
+                label_first_idx.append(i)
+                label_list.append(Labels[i, :])
+
+    categories = []
+    pos_image_ids = []
+    neg_image_ids = []
+    for i, label in enumerate(label_list):
+        if label[0] <= 2.5:
+            if label[1] >= 2.5 and label[1] <= 4.5:
+                # print(i, label, ' neutral')
+                categories.append(0)
+
+            elif label[1] > 4.5:
+                # print(i, label, ' positive')
+                categories.append(1)
+                pos_image_ids.append(i)
+
+            else:
+                # print(i, label, ' negative')
+                categories.append(-1)
+                neg_image_ids.append(i)
+
+        else:
+            if label[1] < 3.5:
+                # print(i, label, ' negative')
+                categories.append(-1)
+                neg_image_ids.append(i)
+
+            else:
+                # print(i, label, ' positive')
+                categories.append(1)
+                pos_image_ids.append(i)
+
+        # check if neutral images come every other frame
+        if categories[-1] == 0:
+            if len(categories) > 1 and categories[-2] == 0:
+                print('---- order error ----')
+
+            elif len(categories) > 2 and categories[-3] != 0:
+                print('---- order error ----')
+
+        else:
+            if len(categories) > 1 and categories[-2] != 0:
+                print('---- order error ----')
+
+            elif len(categories) > 2 and categories[-3] == 0:
+                print('---- order error ----')
+
+    per_train_data, RF_ars_mean, RF_val_mean, NN_ars_mean, NN_val_mean = [], [], [], [], []
+    RF_ars_err, RF_val_err, NN_ars_err, NN_val_err = [], [], [], []
+
+    # use event1 for training and event2 for testing
+    train_ind = range(0, sequence_length * (event_end_idx[0] // sequence_length))
+    test_ind = range(event_end_idx[0], event_end_idx[0] + sequence_length * ((event_end_idx[1] - event_end_idx[0]) // sequence_length))
+
+    train_dataset = {'features': Features[train_ind, :],
+                     'labels': Labels[train_ind, :]}
+
+    test_dataset = {'features': Features[test_ind, :],
+                    'labels': Labels[test_ind, :]}
+
+    print('train feature shape:', train_dataset['features'].shape, ', label shape:', train_dataset['labels'].shape)
+    print('test feature shape:', test_dataset['features'].shape, ', label shape:', test_dataset['labels'].shape)
+
+    train_data = MultiFeatDataset(train_dataset, balance_data=False)
+    test_data  = MultiFeatDataset(test_dataset, balance_data=False)
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+    # regular NN
+    if sequence_length == 1:
+        batch_size = 128
+        net = EmotionNet(num_feats=train_dataset['features'].shape[1], device=device, config=config)
+    # LSTM
+    else:
+        batch_size = 8
+        net = EmotionNetLSTM(num_feats=train_dataset['features'].shape[1], seq_len=sequence_length, device=device, config=config)
+
+    net.to(device)
+
+    train_dataloader = torch.utils.data.DataLoader(train_data, batch_size=sequence_length*batch_size, shuffle=False)
+    test_dataloader  = torch.utils.data.DataLoader(test_data, batch_size=sequence_length*batch_size, shuffle=False)
+
+    # see if an exponential decay learning rate scheduler is required
+    # optimizer = optim.SGD(net.parameters(), lr=0.01, momentum=0.9)
+    optimizer = optim.Adam(net.parameters(), lr=1e-3, weight_decay=1e-3)
+    # optimizer = optim.Adam(net.parameters(), lr=1e-3)
+    scheduler = None
+    # scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.99)
+
+    if train_model:
+        print('Train the model on: {}'.format(device))
+        NN_trn_ars, NN_trn_val, NN_tst_ars, NN_tst_val = net.train_model(train_dataloader, test_dataloader, optimizer, scheduler=scheduler, batch_size=batch_size, epochs=2000)
+    else:
+        torch_file = 'MultiModal_model_' + str(NN_model_dic[str(step_size)]) + '/net_500.pth'
+
+        checkpoint = torch.load(config['torch']['EMOTION_models'] + torch_file, map_location=device)
+        fig, ax = plt.subplots(1, 2)
+        fig.suptitle('DNN')
+
+        trn_results = net.validate_model(train_dataloader, optimizer, checkpoint, device=torch.device('cpu'), ax=ax[0])
+        tst_results = net.validate_model(test_dataloader, optimizer, checkpoint, device=torch.device('cpu'), ax=ax[1])
+
+        NN_trn_ars = trn_results['Arousal']
+        NN_trn_val = trn_results['Valence']
+        NN_tst_ars = tst_results['Arousal']
+        NN_tst_val = tst_results['Valence']
+
+    print(NN_trn_ars.shape, NN_trn_val.shape, NN_tst_ars.shape, NN_tst_val.shape)
+
+    ax1[0, 1].hist(NN_tst_ars, bins=n_bins)
+    ax1[0, 1].set_title('Arousal-DNN ({})'.format(step_size))
+    ax1[0, 1].set_xlim([0, 4])
+    ax1[0, 1].set_ylim([0, 6000])
+
+    ax1[1, 1].hist(NN_tst_val, bins=n_bins)
+    ax1[1, 1].set_title('Valence-DNN ({})'.format(step_size))
+    ax1[1, 1].set_xlim([0, 4])
+    ax1[1, 1].set_ylim([0, 6000])
+    fig1.suptitle('Error histogram')
+
+    # ax2[0, 1].hist(NN_trn_val, bins=n_bins)
+    # ax2[0, 1].set_title('DNN-Train')
+
+    # ax2[1, 1].hist(NN_tst_val, bins=n_bins)
+    # ax2[1, 1].set_title('DNN-Test')
+    # fig2.suptitle('Valence absolute error')
+
+    per_train_data.append((train_categories.shape[0] * 100 / num_cat))
+    NN_ars_mean.append(np.mean(NN_tst_ars))
+    NN_val_mean.append(np.mean(NN_tst_val))
+
+    # RF_ars_err.append(np.array([np.mean(RF_tst_ars) - np.min(RF_tst_ars), np.max(RF_tst_ars) - np.mean(RF_tst_ars)]).reshape(2, 1))
+    # RF_val_err.append(np.array([np.mean(RF_tst_val) - np.min(RF_tst_val), np.max(RF_tst_val) - np.mean(RF_tst_val)]).reshape(2, 1))
+    # NN_ars_err.append(np.array([np.mean(NN_tst_ars) - np.min(NN_tst_ars), np.max(NN_tst_ars) - np.mean(NN_tst_ars)]).reshape(2, 1))
+    # NN_val_err.append(np.array([np.mean(NN_tst_val) - np.min(NN_tst_val), np.max(NN_tst_val) - np.mean(NN_tst_val)]).reshape(2, 1))
+
+    NN_ars_err.append(np.std(NN_tst_ars))
+    NN_val_err.append(np.std(NN_tst_val))
+
+    # NN_ars_err = np.concatenate(NN_ars_err, axis=1)
+    # NN_val_err = np.concatenate(NN_val_err, axis=1)
+    per_train_data = np.array(per_train_data)
+
+    fig, ax = plt.subplots(1, 2)
+    ax[0].errorbar(per_train_data, NN_ars_mean, yerr=NN_ars_err, ecolor='k', mec='k', mfc='k', ms=10, capsize=4, fmt='s', label='DNN')
+    ax[0].set_title('Arousal test error (DNN)')
+    ax[0].set_ylabel('Mean Absolute Error')
+    ax[0].set_xlabel('Percentage training data')
+    ax[0].set_ylim([0, 2.5])
+    ax[0].set_xlim([0, 60])
+
+    ax[1].errorbar(per_train_data, NN_val_mean, yerr=NN_val_err, ecolor='k', mec='k', mfc='k', ms=10, capsize=4, fmt='s', label='DNN')
+    ax[1].set_title('Valence test error (DNN)')
+    # ax[1].set_ylabel('Mean Absolute Error')
+    ax[1].set_xlabel('Percentage training data')
+    ax[1].set_ylim([0, 2.5])
+    ax[1].set_xlim([0, 60])
 
 plt.show()
