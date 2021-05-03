@@ -77,6 +77,13 @@ def train_regression_model(modality, train_data, regressor, clean_features=True,
 
     return regressor
 
+def ratio_absolute_error_below_thres(data_train, data_pred, threshold=0.7):
+    squared_error = np.square(data_train - data_pred)
+    if len(squared_error.shape) > 1:
+        squared_error = np.sum(squared_error, axis=-1)
+    abs_error = np.sqrt(squared_error)
+    return 100. * float(np.extract(abs_error < threshold, abs_error).shape[0]) / float(abs_error.shape[0])
+
 def train_test_regression_model(modality, train_data, test_data, regressor, clean_features=True, model_save_path=[], pic_save_path=[], results_save_path=[]):
     """Train the regressor on the inpu training dataset and provide the test results
 
@@ -129,7 +136,14 @@ def train_test_regression_model(modality, train_data, test_data, regressor, clea
                         np.std(np.abs(y_train[:, 1] - train_pred[:, 1])), 
                         np.std(np.abs(y_test[:, 0] - test_pred[:, 0])), 
                         np.std(np.abs(y_test[:, 1] - test_pred[:, 1])),
-                        np.std(np.abs(y_test - test_pred))]}
+                        np.std(np.abs(y_test - test_pred))],
+
+                'THRES': [ratio_absolute_error_below_thres(y_train[:, 0], train_pred[:, 0], 0.7),
+                          ratio_absolute_error_below_thres(y_train[:, 1], train_pred[:, 1], 0.7),
+                          ratio_absolute_error_below_thres(y_test[:, 0], test_pred[:, 0], 0.7),
+                          ratio_absolute_error_below_thres(y_test[:, 1], test_pred[:, 1], 0.7),
+                          ratio_absolute_error_below_thres(y_test, test_pred, 0.7)]
+    }
     
     feat_imp = pd.DataFrame({'feature_importance': regressor.feature_importances_})
 
