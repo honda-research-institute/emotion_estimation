@@ -36,11 +36,14 @@ hri:
   interim_standardized : "data/interim/hri_standardized.h5"
   interim_first_samp   : "data/interim/hri_first_samp.h5" # standardized first 3 samples from each picture event
   interim_last_samp    : "data/interim/hri_last_samp.h5"  # standardized last 3 samples from each picture event
+  interim_transition   : "data/interim/hri_transition.h5"
   processed            : "data/processed/hri.h5" # not used
 
 
 raw_data_pool         : "data/raw/raw_data_pool.h5"
 transformed_data      : "data/processed/transformed_data.h5"
+raw_data_pool_transition : "data/raw/raw_data_pool_transition.h5"
+transformed_data_transition : "data/processed/transformed_data_transition.h5"
 
 # Raw HRI data  
 hri_pooled    : "data/processed/hri_pooled.h5"
@@ -52,12 +55,14 @@ hri_ECG_SSL_feats_category1    : "data/features/hri_ECG_SSL_feats_category1.h5"
 hri_ECG_SSL_feats_category2    : "data/features/hri_ECG_SSL_feats_category2.h5" 
 hri_ECG_SSL_feats_first_samp   : "data/features/hri_ECG_SSL_feats_first_samp.h5"
 hri_ECG_SSL_feats_last_samp    : "data/features/hri_ECG_SSL_feats_last_samp.h5"
+hri_ECG_SSL_feats_transition   : "data/features/hri_ECG_SSL_feats_transition.h5"
 
 # Handpicked features from the modalities
 hri_feats            : "data/features/hri_feats.h5"
 hri_feats_pooled     : "data/features/hri_feats_pooled.h5"
 hri_feats_first_samp : "data/features/hri_feats_first_samp.h5"
 hri_feats_last_samp  : "data/features/hri_feats_last_samp.h5"
+hri_feats_transition : "data/features/hri_feats_transition.h5"
 
 # Sort the data according to increasing valence and pick different images for training and testing
 hri_feats_category1  : "data/features/hri_feats_category1.h5" 
