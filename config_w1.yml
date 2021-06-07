@@ -42,7 +42,7 @@ hri:
 
 
 raw_data_pool         : "data/raw/raw_data_pool.h5"
-transformed_data      : "data/processed/transformed_data_w1.h5"
+transformed_data      : "data/processed/transformed_data.h5"
 raw_data_pool_transition : "data/raw/raw_data_pool_transition_w1_0_0.h5"  # no delay
 transformed_data_transition : "data/processed/transformed_data_transition_w1.h5"
 
