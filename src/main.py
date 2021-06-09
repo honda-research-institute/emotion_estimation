@@ -41,9 +41,9 @@ from feature_extraction import extract_gsr_features, extract_all_features
 from Regression_models import train_test_regression_model, test_pretrained_regression_model
 
 # usual (window size = 10s)
-config_name = 'config.yml'
+#config_name = 'config.yml'
 # small window for LSTM
-#config_name = 'config_w1.yml'
+config_name = 'config_w1.yml'
 config = yaml.load(open(Path(__file__).resolve().parents[1] / config_name), Loader=yaml.SafeLoader)
 window_len = config['freq'] * config['window_size']
 
@@ -1828,7 +1828,7 @@ with skip_run('run', 'Learn dynamics model using raw data from windows spanning 
     train_model = True
     data_dic = dd.io.load(config['hri']['interim_transition'])
     # dictionary of subject: [train_ratio, test_ratio]
-    target_subs = {'S1': [0.4, 0.6],
+    target_subs = {'S1': [0.5, 0.5],
                    }
 
     # use LSTM if sequence_length > 1
@@ -2031,7 +2031,7 @@ with skip_run('run', 'Learn dynamics model using raw data from windows spanning 
         net = EmotionNetConv1d(window_length=train_dataset['features'].shape[2], num_in_channels=train_dataset['features'].shape[1], device=device, config=config)
 
     else:
-        batch_size = 8
+        batch_size = 32
         net = EmotionNetLSTM(num_feats=train_dataset['features'].shape[2], seq_len=sequence_length, num_in_channels=train_dataset['features'].shape[1], device=device, config=config)
 
     net.to(device)

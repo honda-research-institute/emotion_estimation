@@ -1297,24 +1297,22 @@ class EmotionNetConv1d(EmotionNet):
 # Multi-modal EMOTION recognition using LSTM
 class EmotionNetLSTM(EmotionNet):
 
-    def __init__(self, num_feats, seq_len, num_in_channels = 1, device=torch.device("cpu"), config=[]):
+    def __init__(self, num_feats, seq_len, num_in_channels=1, device=torch.device("cpu"), config=[]):
         super(EmotionNetLSTM, self).__init__(num_feats, device=device, config=config)
         # number of LSTM cells = number of windows in a sequence
         self.seq_len = seq_len
-        # number of input/output channels of each Conv1d unit (takes one window)
-        self.n_conv1d_in = num_in_channels
-        self.n_conv1d_out = 32
-        conv1ds = []
-        for i in range(seq_len):
-            conv1ds.append(conv_block(in_channels=self.num_in_channels, out_channels=self.n_conv1d_out, kernel_size=4, stride=1, dropout_prob=0.0))
+        # number of input/output channels of the Conv1d unit (takes one window)
+        self.n_conv_in = num_in_channels
+        self.n_conv_out = 32
+        conv1d = self.conv_block(in_channels=self.n_conv_in, out_channels=self.n_conv_out, kernel_size=4, stride=1, dropout_prob=0.1)
         # LSTM: each cell takes output of one Conv1d unit
         n_lstm_layers = 1
         self.lstm_hidden_size = 64
-        lstm = nn.LSTM(self.n_conv1d_out, self.lstm_hidden_size, n_lstm_layers, batch_first=True)
+        lstm = nn.LSTM(self.n_conv_out, self.lstm_hidden_size, n_lstm_layers, batch_first=True)
         # Fully connected layer: outputs (arousal, valence)
-        dense = self.fully_connect_block(self.lstm_hidden_size, 2, 0.05)
+        dense = self.fully_connect_block(self.lstm_hidden_size, 2, 0.1)
         self.dense_net = nn.ModuleDict({
-            'conv1d': conv1ds,
+            'conv1d': conv1d,
             'lstm': lstm,
             'dense': dense
             })
@@ -1347,9 +1345,12 @@ class EmotionNetLSTM(EmotionNet):
 
 
     def forward(self, x):
-        # [seq_len * batch, num_feat] -> [batch, seq_len, num_feat] (note batch_first=True)
-        x_input = x.view(-1, self.seq_len, self.num_feat)
-        lstm_output, _ = self.dense_net['lstm'](x_input)
+        # x: [seq_len*batch, n_conv_in, num_feat]
+        # input x[i, :, :] to the conv1d layer (common for every frame)
+        conv_out = self.dense_net['conv1d'](x)
+        # conv_out: [seq_len*batch, n_conv_out, 1] -> [batch, seq_len, n_conv_out] (note batch_first=True)
+        conv_out = conv_out.view(-1, self.seq_len, self.n_conv_out)
+        lstm_output, _ = self.dense_net['lstm'](conv_out)
         #print('lstm output size:', lstm_output.shape)
         #print('lstm output:', lstm_output)
         # [batch, seq_len, lstm_hidden] -> last output [batch, lstm_hidden]
