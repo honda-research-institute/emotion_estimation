@@ -41,9 +41,9 @@ from feature_extraction import extract_gsr_features, extract_all_features
 from Regression_models import train_test_regression_model, test_pretrained_regression_model
 
 # usual (window size = 10s)
-#config_name = 'config.yml'
+config_name = 'config.yml'
 # small window for LSTM
-config_name = 'config_w1.yml'
+#config_name = 'config_w1.yml'
 config = yaml.load(open(Path(__file__).resolve().parents[1] / config_name), Loader=yaml.SafeLoader)
 window_len = config['freq'] * config['window_size']
 
@@ -1828,7 +1828,7 @@ with skip_run('run', 'Learn dynamics model using raw data from windows spanning 
     train_model = True
     data_dic = dd.io.load(config['hri']['interim_transition'])
     # dictionary of subject: [train_ratio, test_ratio]
-    target_subs = {'S1': [0.5, 0.5],
+    target_subs = {'S1': [0.4, 0.6],
                    }
 
     # use LSTM if sequence_length > 1
@@ -1878,34 +1878,25 @@ with skip_run('run', 'Learn dynamics model using raw data from windows spanning 
                 org_data = data_dic[sub][event][modality]
                 # org_data: [n_windows, n_channels, n_frames]
                 print(modality, ' org_data shape:', org_data.shape)
-                if sequence_length == 1:
-                    # resample to make the number of frames in a window becomes the same
-                    interval = float(max_frames / org_data.shape[2])
-                    new_data = np.zeros([org_data.shape[0], org_data.shape[1], max_frames])
-                    for i in range(org_data.shape[2]):
-                        cur_index = round(interval * i)
-                        next_index = round(interval * (i+1))
-                        new_data[:, :, cur_index:next_index] = org_data[:, :, i:i+1]
 
-                else:
-                    # just flatten
-                    new_data = org_data.reshape(org_data.shape[0], -1)
+                # resample to make the number of frames in a window becomes the same
+                interval = float(max_frames / org_data.shape[2])
+                new_data = np.zeros([org_data.shape[0], org_data.shape[1], max_frames])
+                for i in range(org_data.shape[2]):
+                    cur_index = round(interval * i)
+                    next_index = round(interval * (i+1))
+                    new_data[:, :, cur_index:next_index] = org_data[:, :, i:i+1]
 
                 features.append(new_data)
                 print(modality, ' new shape:', features[-1].shape)
 
-            # if Conv1d is used, number of windows and features must be the same across modalities
-            if sequence_length == 1:
-                n_windows = min([f.shape[0] for f in features])
-                n_frames = min([f.shape[-1] for f in features])
-                features = [f[0:n_windows, :, 0:n_frames] for f in features]
-
-            else:
-                n_windows = min([f.shape[0] for f in features])
-                features = [f[0:n_windows, :] for f in features]
-
+            # number of windows and features must be the same across modalities
+            n_windows = min([f.shape[0] for f in features])
+            n_frames = min([f.shape[-1] for f in features])
+            features = [f[0:n_windows, :, 0:n_frames] for f in features]
             features = np.concatenate(features, axis=1)
             print('features size:', features.shape)
+
             Features.append(features)
             Labels.append(labels)
             event_sub.append(sub)
@@ -1985,7 +1976,6 @@ with skip_run('run', 'Learn dynamics model using raw data from windows spanning 
     train_ind = []
     test_ind = []
     offset = round(config['hri']['transition_delay_time'] / (1.0 - config['hri']['percent_overlap']))
-    print('offset:', offset)
     random.seed(10)
     for i, (cat, sub) in enumerate(zip(categories, cat_sub)):
         # find non-neutral image sandwitched by neutral images
@@ -2042,7 +2032,7 @@ with skip_run('run', 'Learn dynamics model using raw data from windows spanning 
 
     else:
         batch_size = 8
-        net = EmotionNetLSTM(num_feats=train_dataset['features'].shape[1], seq_len=sequence_length, device=device, config=config)
+        net = EmotionNetLSTM(num_feats=train_dataset['features'].shape[2], seq_len=sequence_length, num_in_channels=train_dataset['features'].shape[1], device=device, config=config)
 
     net.to(device)
 

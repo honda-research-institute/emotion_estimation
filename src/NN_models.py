@@ -1297,18 +1297,53 @@ class EmotionNetConv1d(EmotionNet):
 # Multi-modal EMOTION recognition using LSTM
 class EmotionNetLSTM(EmotionNet):
 
-    def __init__(self, num_feats, seq_len, device=torch.device("cpu"), config=[]):
+    def __init__(self, num_feats, seq_len, num_in_channels = 1, device=torch.device("cpu"), config=[]):
         super(EmotionNetLSTM, self).__init__(num_feats, device=device, config=config)
-        n_lstm_layers = 1
+        # number of LSTM cells = number of windows in a sequence
         self.seq_len = seq_len
-        # output (arousal, valence)
+        # number of input/output channels of each Conv1d unit (takes one window)
+        self.n_conv1d_in = num_in_channels
+        self.n_conv1d_out = 32
+        conv1ds = []
+        for i in range(seq_len):
+            conv1ds.append(conv_block(in_channels=self.num_in_channels, out_channels=self.n_conv1d_out, kernel_size=4, stride=1, dropout_prob=0.0))
+        # LSTM: each cell takes output of one Conv1d unit
+        n_lstm_layers = 1
         self.lstm_hidden_size = 64
-        lstm = nn.LSTM(num_feats, self.lstm_hidden_size, n_lstm_layers, batch_first=True)
+        lstm = nn.LSTM(self.n_conv1d_out, self.lstm_hidden_size, n_lstm_layers, batch_first=True)
+        # Fully connected layer: outputs (arousal, valence)
         dense = self.fully_connect_block(self.lstm_hidden_size, 2, 0.05)
         self.dense_net = nn.ModuleDict({
+            'conv1d': conv1ds,
             'lstm': lstm,
             'dense': dense
             })
+
+
+    def conv_block(self, in_channels, out_channels, kernel_size, stride, dropout_prob):
+        # pad the layers such that the output has the same size of input
+        if (kernel_size - 1) % 2 == 0:
+            pad_left  = int((kernel_size - 1) / 2)
+            pad_right = int((kernel_size - 1) / 2)
+        else:
+            pad_left  = int(kernel_size / 2 )
+            pad_right = int(kernel_size / 2 - 1)
+
+        layers = OrderedDict()
+        layers['pad0'] = nn.ConstantPad1d(padding=(pad_left, pad_right), value=0)
+        layers['conv0'] = nn.Conv1d(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size, stride=stride)
+        layers['relu0'] = nn.LeakyReLU()
+        layers['dropout0'] = nn.Dropout(p=dropout_prob)
+
+        layers['pad1'] = nn.ConstantPad1d(padding=(pad_left, pad_right), value=0)
+        layers['conv1'] = nn.Conv1d(in_channels=out_channels, out_channels=out_channels, kernel_size=kernel_size, stride=stride)
+        layers['relu1'] = nn.LeakyReLU()
+        layers['dropout1'] = nn.Dropout(p=dropout_prob)
+
+        layers['pool'] = nn.AdaptiveMaxPool1d(1)
+
+        conv = nn.Sequential(layers)
+        return conv
 
 
     def forward(self, x):
