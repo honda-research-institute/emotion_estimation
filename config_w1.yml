@@ -28,7 +28,10 @@ dreamer:
 hri:
   event_window         : 15   # each picture is displayed for 15 secs
   percent_overlap      : 0.0  # slide 1 sec
-  transition_delay_time : 0.0  # which label to use as the ground truth; if 0, the last frame of the window
+  #transition_delay_time : 0.0  # which label to use as the ground truth; if 0, the last frame of the window
+  #transition_delay_time : 2.0
+  transition_delay_time : 4.0
+  #transition_delay_time : 6.0
   ch_names             : ['ECG', 'EMG', 'GSR', 'PPG', 'RSP']
   sfreq                : {'ecg': 200, 'emg': 250, 'gsr': 25, 'ppg': 200, 'rsp': 25}
   file_names           : ['ecg.csv', 'emg.csv', 'gsr.csv', 'ppg.csv', 'rsp.csv'] # csv files for each scenario of subject data
@@ -37,13 +40,19 @@ hri:
   interim_standardized : "data/interim/hri_standardized.h5"
   interim_first_samp   : "data/interim/hri_first_samp.h5" # standardized first 3 samples from each picture event
   interim_last_samp    : "data/interim/hri_last_samp.h5"  # standardized last 3 samples from each picture event
-  interim_transition   : "data/interim/hri_transition_w1_0_0.h5"  # no delay
+  #interim_transition   : "data/interim/hri_transition_w1_0_0.h5"  # no delay
+  #interim_transition   : "data/interim/hri_transition_w1_2_0.h5"  # 2s delay
+  interim_transition   : "data/interim/hri_transition_w1_4_0.h5"  # 4s delay
+  #interim_transition   : "data/interim/hri_transition_w1_6_0.h5"  # 6s delay
   processed            : "data/processed/hri.h5" # not used
 
 
 raw_data_pool         : "data/raw/raw_data_pool.h5"
 transformed_data      : "data/processed/transformed_data.h5"
-raw_data_pool_transition : "data/raw/raw_data_pool_transition_w1_0_0.h5"  # no delay
+#raw_data_pool_transition : "data/raw/raw_data_pool_transition_w1_0_0.h5"  # no delay
+#raw_data_pool_transition : "data/raw/raw_data_pool_transition_w1_2_0.h5"  # 2s delay
+raw_data_pool_transition : "data/raw/raw_data_pool_transition_w1_4_0.h5"  # 4s delay
+#raw_data_pool_transition : "data/raw/raw_data_pool_transition_w1_6_0.h5"  # 6s delay
 transformed_data_transition : "data/processed/transformed_data_transition_w1.h5"
 
 # Raw HRI data  
@@ -56,14 +65,20 @@ hri_ECG_SSL_feats_category1    : "data/features/hri_ECG_SSL_feats_category1.h5"
 hri_ECG_SSL_feats_category2    : "data/features/hri_ECG_SSL_feats_category2.h5" 
 hri_ECG_SSL_feats_first_samp   : "data/features/hri_ECG_SSL_feats_first_samp.h5"
 hri_ECG_SSL_feats_last_samp    : "data/features/hri_ECG_SSL_feats_last_samp.h5"
-hri_ECG_SSL_feats_transition   : "data/features/hri_ECG_SSL_feats_transition_w1_0_0.h5"  # no delay
+#hri_ECG_SSL_feats_transition   : "data/features/hri_ECG_SSL_feats_transition_w1_0_0.h5"  # no delay
+#hri_ECG_SSL_feats_transition   : "data/features/hri_ECG_SSL_feats_transition_w1_2_0.h5"  # 2s delay
+hri_ECG_SSL_feats_transition   : "data/features/hri_ECG_SSL_feats_transition_w1_4_0.h5"  # 4s delay
+#hri_ECG_SSL_feats_transition   : "data/features/hri_ECG_SSL_feats_transition_w1_6_0.h5"  # 6s delay
 
 # Handpicked features from the modalities
 hri_feats            : "data/features/hri_feats.h5"
 hri_feats_pooled     : "data/features/hri_feats_pooled.h5"
 hri_feats_first_samp : "data/features/hri_feats_first_samp.h5"
 hri_feats_last_samp  : "data/features/hri_feats_last_samp.h5"
-hri_feats_transition : "data/features/hri_feats_transition_w1_0_0.h5"  # no delay
+#hri_feats_transition : "data/features/hri_feats_transition_w1_0_0.h5"  # no delay
+#hri_feats_transition : "data/features/hri_feats_transition_w1_2_0.h5"  # 2s delay
+hri_feats_transition : "data/features/hri_feats_transition_w1_4_0.h5"  # 4s delay
+#hri_feats_transition : "data/features/hri_feats_transition_w1_6_0.h5"  # 6s delay
 
 # Sort the data according to increasing valence and pick different images for training and testing
 hri_feats_category1  : "data/features/hri_feats_category1.h5" 
