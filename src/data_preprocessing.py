@@ -280,11 +280,12 @@ def parse_hri_data_with_transition(modality, filepath, col_names, skiprows, usec
     for eve in range(0, df.shape[0], sliding_window):
         if (eve + epoch_len) <= df.shape[0]:
             window_end_time = df['time'].iloc[eve+epoch_len-1] - transition_delay_time
-            epochs.append(df.iloc[eve:eve+epoch_len, 1:].to_numpy().reshape(1, len(col_names)-1, -1))
             # find the event corresponding to window_end_time
             window_end_event_idx = [i for i, t in enumerate(event_time) if t < window_end_time]
-            window_end_event_idx = window_end_event_idx[-1]
-            labels.append(np.array([arousal[window_end_event_idx], valence[window_end_event_idx]]).reshape(1, -1))
+            if len(window_end_event_idx) > 0:
+                window_end_event_idx = window_end_event_idx[-1]
+                epochs.append(df.iloc[eve:eve+epoch_len, 1:].to_numpy().reshape(1, len(col_names)-1, -1))
+                labels.append(np.array([arousal[window_end_event_idx], valence[window_end_event_idx]]).reshape(1, -1))
 
     print('epoch count:', len(epochs), ', shape:', epochs[0].shape)
     print('label count:', len(labels), ', shape:', labels[0].shape)
